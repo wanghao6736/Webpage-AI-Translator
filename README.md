@@ -1,6 +1,6 @@
 # 🚀 网页划词翻译 (Webpage AI Translator)
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue) ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Required-green)
+![Version](https://img.shields.io/badge/version-1.0.1-blue) ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Required-green)
 
 一款基于 Tampermonkey 的网页划词翻译脚本。支持 **DeepSeek / OpenAI / Gemini** 等 AI 模型的**流式输出（打字机效果）**，同时保留了 Google / Bing 等免费翻译服务。
 
@@ -27,6 +27,7 @@
 ## 📦 安装指南
 
 1.  请确保你的浏览器已安装 **Tampermonkey** 扩展 ([Chrome](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) / [Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd))。
+
 2.  点击下方链接安装脚本：
 
     👉 **[点击安装 / 更新脚本](https://raw.githubusercontent.com/wanghao6736/Webpage-AI-Translator/main/src/web-ai-translator.user.js)**
@@ -52,15 +53,37 @@
 2.  将你电脑里的 PDF 文件 **直接拖拽 (Drag & Drop)** 到该网页中。
 3.  现在你可以像在普通网页一样划词翻译了！脚本完美生效。
 
+### 3. 💡 功能解释
+
+脚本提供两个核心功能按钮，请注意区分：
+
+*   **"译" 按钮（翻译模式）**：
+    *   功能：将选中的文本翻译为目标语言（默认：简体中文）
+    *   特点：直接翻译，不添加额外解释
+    *   适用场景：快速理解外文内容
+
+*   **"释" 按钮（解释模式）**：
+    *   功能：使用 AI 对选中的文本进行**深度解释**，而非简单翻译
+    *   特点：AI 会以计算机专家身份，详细解释术语、概念、技术细节等
+    *   适用场景：理解复杂的技术术语、概念、代码片段等
+    *   ⚠️ **注意**：解释模式仅支持 AI 服务（DeepSeek/OpenAI/Gemini），免费服务（Google/Bing）不支持此功能
+
+*   **修改目标语言**：
+    *   当前默认目标语言为**简体中文**
+    *   如需修改为其他语言，请在脚本中编辑 `CONFIG.prompts` 配置：
+        *   将 `translate` 和 `explain` 提示词中的 `Simplified Chinese` 替换为你需要的语言（如 `English`、`Japanese`、`Korean` 等）
+        *   对于免费服务（Google/Bing），还需修改对应服务配置中的 `tl`（Google）或 `to`（Bing）参数
+
 ## 🔌 支持的服务列表
 
-| 服务 | 类型 | 需要 Key? | 特性 |
-| :--- | :--- | :--- | :--- |
-| **DeepSeek** | AI | ✅ | **推荐**，速度快，流式丝滑 |
-| **OpenAI** | AI | ✅ | 标准兼容协议 |
-| **Gemini** | AI | ✅ | Google 官方流式接口 |
-| **Google** | Free | ❌ | 传统的谷歌翻译接口 |
-| **Bing** | Free | ❌ | 微软翻译接口 |
+| 服务 | 类型 | 需要 Key? | 特性 | API 文档 |
+| :--- | :--- | :--- | :--- | :--- |
+| **DeepSeek** | AI | ✅ | **推荐**，速度快，流式丝滑 | [📖 官方文档](https://api-docs.deepseek.com/) |
+| **OpenAI** | AI | ✅ | 标准兼容协议 | [📖 官方文档](https://platform.openai.com/docs/introduction) |
+| **Gemini** | AI | ✅ | Google 官方流式接口 | [📖 官方文档](https://ai.google.dev/api) |
+| **Google** | Free | ❌ | 传统的谷歌翻译接口 | [📖 官方文档](https://cloud.google.com/translate/docs/reference/api-overview) |
+| **Bing** | Free | ❌ | 微软翻译接口 | [📖 官方文档](https://learn.microsoft.com/en-us/azure/ai-services/translator/) |
+
 
 ## ⚠️ 免责声明
 

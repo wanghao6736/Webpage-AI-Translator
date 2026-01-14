@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页划词翻译 (Webpage AI Translator)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  支持流式输出、解释模式、配置分离的划词翻译脚本。支持 DeepSeek/OpenAI/Gemini/Google 等。
 // @author       Wang Hao
 // @match        *://*/*
@@ -118,12 +118,12 @@
                             maskKey = `${start}**********${end}`;
                         }
 
-                        const msg = `当前 ${key} Key: [ ${maskKey} ]\n\n👇 如需修改，请在下方输入新 Key (留空取消):`;
+                        const msg = `当前 ${capitalize(key)} Key: [ ${maskKey} ]\n\n👇 如需修改，请在下方输入新 Key (留空取消):`;
                         const newKey = prompt(msg, '');
 
                         if (newKey && newKey.trim().length > 0) {
                             GM_setValue(`key_${key}`, newKey.trim());
-                            alert(`✅ ${key} API Key 已更新！`);
+                            alert(`✅ ${capitalize(key)} API Key 已更新！`);
                         }
                     });
                 }
@@ -441,7 +441,7 @@
         }
 
         initServiceList(services, activeKey, onSelect) {
-            this.dropdown.innerHTML = '';
+            this._clearElement(this.dropdown);
             Object.keys(services).forEach(key => {
                 const item = document.createElement('div');
                 item.className = `dropdown-item ${key === activeKey ? 'active' : ''}`;
@@ -477,6 +477,13 @@
             if (onSelect) onSelect(key);
         }
 
+        _clearElement(element) {
+            // innerHTML 存在安全问题，使用 removeChild 代替
+            while (element.firstChild) {
+                element.removeChild(element.firstChild);
+            }
+        }
+
         showBtn(x, y) {
             this.panel.style.display = 'none';
             // 重置状态
@@ -494,7 +501,8 @@
             this.panel.style.left = this.btnGroup.style.left;
             this.panel.style.top = (parseFloat(this.btnGroup.style.top) + 35) + 'px';
 
-            this.panel.innerHTML = this._genPlaceHolder(activeKey);
+            this._clearElement(this.panel);
+            this.panel.appendChild(this._genPlaceHolder(activeKey));
 
             this.contentDiv = null;
             this.charQueue = [];
@@ -506,17 +514,21 @@
             const serviceTitle = capitalize(activeKey);
             const isAI = serviceConfig && serviceConfig.type === 'ai';
 
+            const placeholder = document.createElement('div');
+            placeholder.className = 'loading';
+            
             if (isAI) {
-                return `<div class="loading">🧠 ${serviceTitle} 正在思考...</div>`;
+                placeholder.textContent = `🧠 ${serviceTitle} 正在思考...`;
             } else {
-                return `<div class="loading">🔄 ${serviceTitle} 正在翻译...</div>`;
+                placeholder.textContent = `🔄 ${serviceTitle} 正在翻译...`;
             }
+            return placeholder;
         }
 
         updatePanel(text) {
             // 第一次收到数据，清除 Loading，建立文本容器
             if (!this.contentDiv) {
-                this.panel.innerHTML = '';
+                this._clearElement(this.panel);
                 this.contentDiv = document.createElement('span');
                 this.cursor = document.createElement('span');
                 this.cursor.className = 'cursor';
