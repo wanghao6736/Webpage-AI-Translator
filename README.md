@@ -1,8 +1,8 @@
 # 🚀 网页划词翻译 (Webpage AI Translator)
 
-![Version](https://img.shields.io/badge/version-1.0.1-blue) ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Required-green)
+![Version](https://img.shields.io/github/v/tag/wanghao6736/Webpage-AI-Translator) ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Required-green)
 
-一款基于 Tampermonkey 的网页划词翻译脚本。支持 **DeepSeek / OpenAI / Gemini** 等 AI 模型的**流式输出（打字机效果）**，同时保留了 Google / Bing 等免费翻译服务。
+一款基于 Tampermonkey 的网页划词翻译脚本。支持 **DeepSeek / OpenAI / Gemini** 等 AI 模型的**流式输出**，同时保留了 Google / Bing 等免费翻译服务。
 
 ![Preview](images/web-ai-translator.gif)
 
