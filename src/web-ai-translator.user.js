@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         网页划词翻译 (Webpage AI Translator)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
-// @description  支持流式输出、解释模式、配置分离的划词翻译脚本。支持 DeepSeek/OpenAI/Gemini/Google 等。Markdown 渲染完全兼容 CSP。打字机效果统一。智能错误处理。
+// @version      1.1.5
+// @description  支持流式输出、解释模式、配置分离的划词翻译脚本。UI 多级坐标回退(兼容GitHub)，精准锚点定位，链式布局。
 // @author       Wang Hao
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
@@ -13,6 +13,7 @@
 // @connect      translate.googleapis.com
 // @connect      api.openai.com
 // @connect      api.deepseek.com
+// @connect      api.chatanywhere.tech
 // @connect      generativelanguage.googleapis.com
 // @connect      api-free.deepl.com
 // @connect      api-edge.cognitive.microsofttranslator.com
@@ -25,7 +26,7 @@
 	"use strict";
 
 	// ========================================================================
-	// 1. 配置模块 (Configuration)
+	// 1. 配置模块
 	// ========================================================================
 	const CONFIG = {
 		activeService: "gemini", // [切换服务]
@@ -42,7 +43,7 @@
 			iconExplain: "释",
 			iconSettings: "⚙️",
 			zIndex: 999999,
-			offset: { x: 5, y: 5 },
+			offset: 10, // 垂直间距
 		},
 
 		services: {
@@ -59,6 +60,13 @@
 				provider: "openai_compatible",
 				baseUrl: "https://api.openai.com/v1",
 				model: "gpt-3.5-turbo",
+				deltaPath: "choices.0.delta.content",
+			},
+			chatanywhere: {
+				type: "ai",
+				provider: "openai_compatible",
+				baseUrl: "https://api.chatanywhere.tech/v1",
+				model: "gemini-2.5-flash-lite",
 				deltaPath: "choices.0.delta.content",
 			},
 			gemini: {
@@ -91,7 +99,7 @@
 	const capitalize = (s) => s && s[0].toUpperCase() + s.slice(1);
 
 	// ========================================================================
-	// 2. 核心逻辑层 (Core Logic) - 增强了错误处理
+	// 2. 核心逻辑层
 	// ========================================================================
 	class TranslationService {
 		constructor(config) {
@@ -107,11 +115,8 @@
 					GM_registerMenuCommand(`设置 ${capitalize(key)} API Key`, () => {
 						const savedKey = GM_getValue(`key_${key}`, "");
 						let maskKey = "未设置";
-						if (savedKey) {
-							const start = savedKey.substring(0, 3);
-							const end = savedKey.substring(savedKey.length - 4);
-							maskKey = `${start}**********${end}`;
-						}
+						if (savedKey)
+							maskKey = `${savedKey.substring(0, 3)}**********${savedKey.substring(savedKey.length - 4)}`;
 						const newKey = prompt(
 							`当前 ${capitalize(
 								key
@@ -137,6 +142,9 @@
 		}
 
 		async request(text, mode, onUpdate) {
+			// 清空 buffer，防止上次请求的数据残留
+			this.buffer = "";
+
 			const serviceKey = this.getActiveKey();
 			const cfg = this.config.services[serviceKey];
 			if (!cfg) throw new Error(`Service [${serviceKey}] not found.`);
@@ -174,9 +182,8 @@
 					method: "GET",
 					url: `${cfg.url}?${params.toString()}`,
 					headers: cfg.headers || {},
-					timeout: 15000, // 15秒超时
+					timeout: 15000,
 					onload: (res) => {
-						// 错误状态码处理
 						if (res.status >= 400) {
 							let errMsg = `HTTP ${res.status}`;
 							try {
@@ -187,7 +194,6 @@
 							reject(new Error(`[${capitalize(cfg.parser || "API")}] ${errMsg}`));
 							return;
 						}
-
 						try {
 							const data = JSON.parse(res.responseText);
 							if (cfg.parser === "google_gtx") resolve(data[0].map((i) => i[0]).join(""));
@@ -205,7 +211,6 @@
 		_requestAiStream(cfg, prompt, onUpdate) {
 			return new Promise((resolve, reject) => {
 				const { url, headers, body } = this._buildRequestParams(cfg, prompt);
-
 				GM_xmlhttpRequest({
 					method: "POST",
 					url: url,
@@ -227,17 +232,14 @@
 
 						// 【修改点 2】: 预读一段数据来判断生死
 						let firstChunk = "";
-
 						try {
 							const { done, value } = await reader.read();
 							if (value) {
 								firstChunk = decoder.decode(value, { stream: true });
 							}
 
-							// 典型的 AI 错误是短 JSON，而正常流式数据是 "data: ..."
 							let isErrorJson = false;
 							let errorMsg = "";
-
 							try {
 								const json = JSON.parse(firstChunk);
 								// 如果解析成功，且包含 error 字段，说明是 API 报错（即便是 status 0）
@@ -250,16 +252,14 @@
 								// 或者数据不完整。暂且认为是正常的。
 							}
 
-							// 【修改点 3】: 决策时刻
 							if (res.status >= 400 || isErrorJson) {
-								// 确实出错了（状态码不对，或者内容是报错 JSON）
-								const finalStatus = res.status === 0 ? 429 : res.status; // 猜测修正
+								this.buffer = ""; // 请求失败，清空 buffer
+								const finalStatus = res.status === 0 ? 429 : res.status;
 								let friendlyMsg = errorMsg || `HTTP ${finalStatus}`;
 
 								if (friendlyMsg.includes("Quota") || friendlyMsg.includes("limit"))
 									friendlyMsg = "额度已用完 (Quota Exceeded)";
 								if (friendlyMsg.includes("key")) friendlyMsg = "API Key 无效";
-
 								reject(new Error(`[API Error] ${friendlyMsg}`));
 								return;
 							}
@@ -269,22 +269,28 @@
 							// 继续处理 buffer
 							this.buffer += firstChunk;
 							this._parseBuffer(cfg, onUpdate);
-
-							// 继续读取剩余的流
 							while (true) {
 								const { done, value } = await reader.read();
 								if (done) break;
 								this.buffer += decoder.decode(value, { stream: true });
 								this._parseBuffer(cfg, onUpdate);
 							}
+							this.buffer = ""; // 请求成功完成，清空 buffer
 							resolve();
 						} catch (err) {
 							// 只有读流本身报错（比如网络彻底断了读不到数据），才报 Network Error
+							this.buffer = ""; // 请求失败，清空 buffer
 							reject(new Error("网络连接中断或无法读取响应"));
 						}
 					},
-					onerror: () => reject(new Error("网络请求失败 (Network Error)")),
-					ontimeout: () => reject(new Error("请求超时，请检查网络 (Timeout)")),
+					onerror: () => {
+						this.buffer = ""; // 请求失败，清空 buffer
+						reject(new Error("网络请求失败 (Network Error)"));
+					},
+					ontimeout: () => {
+						this.buffer = ""; // 请求超时，清空 buffer
+						reject(new Error("请求超时，请检查网络 (Timeout)"));
+					},
 				});
 			});
 		}
@@ -322,7 +328,14 @@
 						const data = JSON.parse(trimmed.substring(6));
 						const content = this._getValue(data, cfg.deltaPath);
 						if (content) onUpdate(content, true);
-					} catch (e) {}
+					} catch (e) {
+						// 解析 SSE 数据失败，可能是数据格式异常，记录日志便于调试
+						console.warn(
+							"[Web AI Translator] Failed to parse SSE data:",
+							e.message,
+							trimmed.substring(0, 100)
+						);
+					}
 				}
 			}
 		}
@@ -356,29 +369,38 @@
 		_injectStyle() {
 			const s = document.createElement("style");
 			s.textContent = `
-                :host { font-family: sans-serif; line-height: 1.6; --primary: #4e8cff; --error: #d93025; }
-                .btn-group { position: absolute; display: none; gap: 6px; z-index: ${CONFIG.ui.zIndex}; }
+                :host { font-family: sans-serif; line-height: 1.6; --primary: #4e8cff; --translate: #4e8cff; --explain: #28a745; --error: #d93025; }
+
+                .btn-group {
+                    position: absolute; display: none; gap: 8px;
+                    z-index: ${CONFIG.ui.zIndex + 1};
+                    background: #fff; padding: 4px; border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+                    border: 1px solid #e0e0e0;
+                }
+
                 .btn {
-                    width: 30px; height: 30px; border-radius: 20%;
-                    background: #fff; color: #555; cursor: pointer;
+                    width: 28px; height: 28px; border-radius: 20%;
+                    background: #f8f9fa; color: #555; cursor: pointer;
                     display: flex; align-items: center; justify-content: center;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.2s;
                     font-weight: bold; font-size: 14px; user-select: none;
                 }
-                .btn:hover, .btn.active { transform: translateY(-2px); color: var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-                .btn.explain { color: #28a745; }
+                .btn:hover, .btn.active { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+                .btn.translate { color: var(--translate); }
+                .btn.explain { color: var(--explain); }
                 .btn.settings { color: #666; font-size: 16px; background: #f8f9fa; }
 
                 .dropdown {
-                    position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
-                    background: white; border-radius: 6px;
-                    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-                    padding: 4px 0; min-width: 100px; display: none;
-                    flex-direction: column; white-space: nowrap;
+                    position: absolute; background: white; border-radius: 6px;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+                    padding: 4px 0; min-width: 120px; display: none;
+                    flex-direction: column; white-space: nowrap; z-index: ${CONFIG.ui.zIndex + 2};
+                    border: 1px solid #eee;
                 }
                 .dropdown.show { display: flex; }
                 .dropdown-item {
-                    padding: 6px 12px; cursor: pointer; font-size: 13px; color: #333;
+                    padding: 8px 12px; cursor: pointer; font-size: 13px; color: #333;
                     transition: background 0.1s; display: flex; align-items: center; gap: 6px;
                 }
                 .dropdown-item:hover { background: #f1f3f4; color: var(--primary); }
@@ -387,28 +409,25 @@
                 .panel {
                     position: absolute; display: none;
                     background: #fff; border-radius: 8px;
-                    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-                    padding: 12px 16px; min-width: 250px; max-width: 450px;
+                    box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+                    padding: 16px; width: 400px; max-width: 90vw;
                     max-height: 400px; overflow-y: auto; font-size: 14px; color: #333;
                     z-index: ${CONFIG.ui.zIndex};
+                    border: 1px solid #eee;
+                    margin-top: 6px;
                 }
 
                 .md-content { text-align: left; line-height: 1.6; font-size: 14px; }
-                .md-content p { margin: 0 0 8px 0; }
+                .md-content p { margin: 0 0 10px 0; }
                 .md-content strong { color: var(--primary); font-weight: 700; }
                 .md-content code { background: #f0f0f0; padding: 2px 4px; border-radius: 4px; font-family: monospace; color: #d63384; font-size: 0.9em; }
-                .md-content pre { background: #f6f8fa; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; border: 1px solid #eee; }
+                .md-content pre { background: #f6f8fa; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 10px 0; border: 1px solid #eee; }
                 .md-content pre code { background: none; color: #333; padding: 0; display: block; }
-                .md-content ul, .md-content ol { margin: 0 0 8px 0; padding-left: 20px; }
+                .md-content ul, .md-content ol { margin: 0 0 10px 0; padding-left: 20px; }
                 .md-content li { margin-bottom: 4px; }
-                .md-content h1, .md-content h2, .md-content h3 { margin: 10px 0 8px 0; font-size: 1.1em; font-weight: bold; color: #333; }
-
+                .md-content h1, .md-content h2, .md-content h3 { margin: 12px 0 8px 0; font-size: 1.1em; font-weight: bold; color: #333; }
                 .loading { color: #999; font-style: italic; display: flex; align-items: center; gap: 6px; }
-                .loading::before {
-                    content: ''; width: 12px; height: 12px; border: 2px solid #ccc;
-                    border-top-color: var(--primary); border-radius: 50%;
-                    animation: spin 1s infinite linear;
-                }
+                .loading::before { content: ''; width: 14px; height: 14px; border: 2px solid #eee; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s infinite linear; }
                 @keyframes spin { to { transform: rotate(360deg); } }
             `;
 			this.shadow.appendChild(s);
@@ -436,13 +455,12 @@
 
 			this.dropdown = document.createElement("div");
 			this.dropdown.className = "dropdown";
-			this.bSettings.appendChild(this.dropdown);
 
 			this.btnGroup.append(bTrans, bExplain, this.bSettings);
 			this.panel = document.createElement("div");
 			this.panel.className = "panel";
 
-			this.shadow.append(this.btnGroup, this.panel);
+			this.shadow.append(this.btnGroup, this.panel, this.dropdown);
 		}
 
 		initServiceList(services, activeKey, onSelect) {
@@ -462,39 +480,117 @@
 		}
 
 		_toggleDropdown() {
-			const isShown = this.dropdown.classList.toggle("show");
-			if (isShown) this.bSettings.classList.add("active");
-			else this.bSettings.classList.remove("active");
+			if (this.dropdown.classList.contains("show")) this._closeDropdown();
+			else this._openDropdown();
+		}
+
+		_openDropdown() {
+			const itemCount = this.dropdown.childElementCount;
+			const menuHeight = itemCount * 38 + 10;
+			const menuWidth = 120;
+			const btnRect = this.bSettings.getBoundingClientRect();
+			// 下拉菜单锚点：设置按钮
+			const pos = this._computePosition(btnRect, { w: menuWidth, h: menuHeight }, "priority-bottom");
+
+			this.dropdown.style.left = `${pos.left}px`;
+			this.dropdown.style.top = `${pos.top}px`;
+			this.dropdown.classList.add("show");
+			this.bSettings.classList.add("active");
+		}
+
+		_closeDropdown() {
+			this.dropdown.classList.remove("show");
+			this.bSettings.classList.remove("active");
 		}
 
 		_selectService(key, itemDom, onSelect) {
 			this.dropdown.querySelectorAll(".dropdown-item").forEach((el) => el.classList.remove("active"));
 			itemDom.classList.add("active");
 			this.activeServiceKey = key;
-			this.dropdown.classList.remove("show");
-			this.bSettings.classList.remove("active");
+			this._closeDropdown();
 			if (onSelect) onSelect(key);
 		}
 
-		_clearElement(element) {
-			while (element.firstChild) element.removeChild(element.firstChild);
+		_clearElement(el) {
+			while (el.firstChild) el.removeChild(el.firstChild);
 		}
 
-		showBtn(x, y) {
+		/**
+		 * 终极位置计算器
+		 * @param {Object} anchor 锚点信息 {left, top, bottom, height} (Viewport坐标)
+		 * @param {Object} size 自身尺寸 {w, h}
+		 * @param {string} strategy 'forced-bottom' | 'priority-bottom'
+		 */
+		_computePosition(anchor, size, strategy) {
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+			const scrollX = window.scrollX;
+			const scrollY = window.scrollY;
+			const gap = CONFIG.ui.offset;
+
+			let top, left;
+
+			// X 轴：默认左对齐锚点
+			left = anchor.left;
+			// 碰撞检测：右溢出则向左平移
+			if (left + size.w > vw) {
+				left = Math.max(10, vw - size.w - 10);
+			}
+
+			// Y 轴
+			if (strategy === "forced-bottom") {
+				top = anchor.bottom + gap;
+			} else {
+				// 优先在下方
+				if (anchor.bottom + size.h + gap > vh && anchor.top > size.h + gap) {
+					top = anchor.top - size.h - gap; // 放上方
+				} else {
+					top = anchor.bottom + gap; // 放下方
+				}
+			}
+
+			return {
+				left: left + scrollX,
+				top: top + scrollY,
+			};
+		}
+
+		/**
+		 * 显示按钮组
+		 * @param {Object} anchorRect 虚拟的锚点矩形 {left, top, bottom...}
+		 */
+		showBtn(anchorRect) {
 			this.panel.style.display = "none";
-			this.dropdown.classList.remove("show");
-			if (this.bSettings) this.bSettings.classList.remove("active");
+			this._closeDropdown();
 			this.btnGroup.style.display = "flex";
-			this.btnGroup.style.left = `${x + CONFIG.ui.offset.x}px`;
-			this.btnGroup.style.top = `${y + CONFIG.ui.offset.y}px`;
+
+			const btnW = 120;
+			const btnH = 40;
+			// 按钮组锚点：文本选区/鼠标虚拟矩形
+			const pos = this._computePosition(anchorRect, { w: btnW, h: btnH }, "priority-bottom");
+
+			this.btnGroup.style.left = `${pos.left}px`;
+			this.btnGroup.style.top = `${pos.top}px`;
 		}
 
+		/**
+		 * 显示面板
+		 */
 		showPanel(activeKey) {
-			this.panel.style.display = "block";
-			this.panel.style.left = this.btnGroup.style.left;
-			this.panel.style.top = parseFloat(this.btnGroup.style.top) + 35 + "px";
+			this._closeDropdown();
 			this._clearElement(this.panel);
 			this.panel.appendChild(this._genPlaceHolder(activeKey));
+
+			const btnRect = this.btnGroup.getBoundingClientRect();
+			const panelW = 400;
+			const panelH = 200;
+
+			// 面板锚点：按钮组 (强制在下方，构成稳定的视觉链)
+			const pos = this._computePosition(btnRect, { w: panelW, h: panelH }, "forced-bottom");
+
+			this.panel.style.left = `${pos.left}px`;
+			this.panel.style.top = `${pos.top}px`;
+			this.panel.style.display = "block";
 
 			this.targetText = "";
 			this.currentText = "";
@@ -520,7 +616,6 @@
 				this.contentDiv.className = "md-content";
 				this.panel.appendChild(this.contentDiv);
 			}
-
 			if (isIncremental) this.targetText += text;
 			else this.targetText = text;
 
@@ -532,12 +627,11 @@
 				this.isRendering = false;
 				return;
 			}
-
 			const dist = this.targetText.length - this.currentText.length;
 			if (dist > 0) {
 				this.isRendering = true;
 				const speed = Math.max(1, Math.min(100, Math.ceil(dist / 8)));
-				this.currentText += this.targetText.substr(this.currentText.length, speed);
+				this.currentText += this.targetText.substring(this.currentText.length, this.currentText.length + speed);
 				this._renderSafeMarkdown(this.contentDiv, this.currentText);
 				this.panel.scrollTop = this.panel.scrollHeight;
 				requestAnimationFrame(() => this._renderLoop());
@@ -556,7 +650,6 @@
 			for (let i = 0; i < lines.length; i++) {
 				const line = lines[i];
 				const trimLine = line.trim();
-
 				if (trimLine.startsWith("```")) {
 					if (inCodeBlock) {
 						inCodeBlock = false;
@@ -564,24 +657,20 @@
 					} else {
 						inCodeBlock = true;
 						currentBlock = document.createElement("pre");
-						const code = document.createElement("code");
-						currentBlock.appendChild(code);
+						currentBlock.appendChild(document.createElement("code"));
 						container.appendChild(currentBlock);
 					}
 					continue;
 				}
-
 				if (inCodeBlock) {
 					if (!currentBlock) {
 						currentBlock = document.createElement("pre");
-						const code = document.createElement("code");
-						currentBlock.appendChild(code);
+						currentBlock.appendChild(document.createElement("code"));
 						container.appendChild(currentBlock);
 					}
 					currentBlock.firstChild.appendChild(document.createTextNode(line + "\n"));
 					continue;
 				}
-
 				if (line.startsWith("#")) {
 					const match = line.match(/^(#{1,6})\s/);
 					if (match) {
@@ -592,7 +681,6 @@
 						continue;
 					}
 				}
-
 				if (line.match(/^[-*]\s/)) {
 					if (!currentList) {
 						currentList = document.createElement("ul");
@@ -604,7 +692,6 @@
 					continue;
 				}
 				currentList = null;
-
 				if (trimLine.length > 0) {
 					const p = document.createElement("p");
 					this._processInline(p, line);
@@ -620,7 +707,6 @@
 				const nextBold = text.indexOf("**", cursor);
 				let mode = "text";
 				let start = -1;
-
 				if (nextCode !== -1 && (nextBold === -1 || nextCode < nextBold)) {
 					mode = "code";
 					start = nextCode;
@@ -633,9 +719,7 @@
 					container.appendChild(document.createTextNode(text.slice(cursor)));
 					break;
 				}
-				if (start > cursor) {
-					container.appendChild(document.createTextNode(text.slice(cursor, start)));
-				}
+				if (start > cursor) container.appendChild(document.createTextNode(text.slice(cursor, start)));
 
 				if (mode === "code") {
 					const end = text.indexOf("`", start + 1);
@@ -664,13 +748,13 @@
 		hide() {
 			this.btnGroup.style.display = "none";
 			this.panel.style.display = "none";
-			this.dropdown.classList.remove("show");
-			if (this.bSettings) this.bSettings.classList.remove("active");
+			this._closeDropdown();
 			this.isRendering = false;
 		}
 
 		bindEvents(onTranslate, onExplain) {
 			this.onAction = (mode) => {
+				this._closeDropdown();
 				if (mode === "translate") onTranslate();
 				if (mode === "explain") onExplain();
 			};
@@ -688,6 +772,12 @@
 			this.svc = new TranslationService(CONFIG);
 			this.ui = new UIManager();
 			this.selection = "";
+
+			// 状态追踪
+			this.startMouse = { x: 0, y: 0 };
+			this.endMouse = { x: 0, y: 0 };
+			this.lastRange = null;
+
 			this.init();
 		}
 
@@ -702,25 +792,98 @@
 				() => this.runTask("explain")
 			);
 
+			// 1. 记录开始坐标
+			document.addEventListener("mousedown", (e) => {
+				// 如果点在插件UI上，不重置
+				if (this.ui.contains(e.target)) return;
+				this.ui.hide();
+				this.startMouse = { x: e.clientX, y: e.clientY };
+			});
+
+			// 2. 记录结束坐标并处理选区
 			document.addEventListener("mouseup", (e) => {
+				this.endMouse = { x: e.clientX, y: e.clientY };
+
 				setTimeout(() => {
 					if (this.ui.contains(e.target)) return;
-					let text = window.getSelection().toString().trim();
+
+					const selection = window.getSelection();
+					let text = selection.toString().trim();
+					let anchorRect = null;
+
+					// A. 输入框特殊处理
 					if (!text && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT")) {
 						const start = e.target.selectionStart;
 						const end = e.target.selectionEnd;
 						if (start !== end) text = e.target.value.substring(start, end).trim();
+						// 输入框回退到鼠标虚拟矩形
+						anchorRect = this._getMouseAnchor();
 					}
-					if (text) {
+					// B. 普通文本选区处理
+					else if (text && selection.rangeCount > 0) {
+						const range = selection.getRangeAt(0);
+						anchorRect = this._getSmartAnchor(range);
+					}
+
+					if (text && anchorRect) {
 						this.selection = text;
-						this.ui.showBtn(e.pageX, e.pageY);
+						this.ui.showBtn(anchorRect);
 					}
 				}, 10);
 			});
+		}
 
-			document.addEventListener("mousedown", (e) => {
-				if (!this.ui.contains(e.target)) this.ui.hide();
-			});
+		/**
+		 * 智能获取锚点 (多级回退策略)
+		 * 目标：返回一个虚拟矩形，其 left=mouseupX, bottom=selectionBottom
+		 */
+		_getSmartAnchor(range) {
+			let rect = null;
+
+			// 策略 1: getBoundingClientRect (最准，但可能为0)
+			const r1 = range.getBoundingClientRect();
+			if (r1.width > 0 && r1.height > 0) {
+				rect = r1;
+			}
+			// 策略 2: getClientRects (处理多行/GitHub代码表格)
+			else {
+				const rects = range.getClientRects();
+				if (rects.length > 0) {
+					// 通常最后一个矩形是选区结束的地方
+					rect = rects[rects.length - 1];
+				}
+			}
+
+			// 策略 3: 鼠标回退 (绝对兜底)
+			if (!rect) {
+				return this._getMouseAnchor();
+			}
+
+			// 构造混合锚点：
+			// X轴：跟随鼠标结束位置 (符合用户视觉焦点)
+			// Y轴：跟随选区底部 (防止遮挡文字)
+			return {
+				left: this.endMouse.x,
+				right: this.endMouse.x,
+				top: rect.bottom, // 逻辑 Top 设为 Bottom，确保后续计算在下方
+				bottom: rect.bottom,
+				width: 0,
+				height: 0,
+			};
+		}
+
+		_getMouseAnchor() {
+			// 构造一个基于鼠标轨迹的虚拟矩形
+			const bottom = Math.max(this.startMouse.y, this.endMouse.y);
+			const right = this.endMouse.x;
+			return {
+				left: right,
+				right: right,
+				top: bottom,
+				bottom: bottom,
+				width: 0,
+				height: 0,
+			};
 		}
 
 		async runTask(mode) {

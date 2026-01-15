@@ -2,7 +2,7 @@
 
 ![Version](https://img.shields.io/github/v/tag/wanghao6736/Webpage-AI-Translator) ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Required-green)
 
-一款基于 Tampermonkey 的网页划词翻译脚本。支持 **DeepSeek / OpenAI / Gemini** 等 AI 模型的**流式输出**，同时保留了 Google / Bing 等免费翻译服务。
+一款基于 Tampermonkey 的网页划词翻译脚本。支持 **DeepSeek / OpenAI / ChatAnywhere / Gemini** 等 AI 模型的**流式输出**，同时保留了 Google / Bing 等免费翻译服务。
 
 ![Preview](images/web-ai-translator.gif)
 
@@ -11,13 +11,14 @@
 *   **🧠 多模态 AI 支持**：
     *   **DeepSeek** (推荐): 极速、高性价比，支持流式输出。
     *   **OpenAI**: 兼容 GPT-3.5/4 等模型。
+    *   **ChatAnywhere**: 多个 AI 公司的 `API Key` 提供商。
     *   **Google Gemini**: 支持原生 SSE 流式协议。
 *   **⚡ 极致体验**：
     *   **流式输出**: 像 ChatGPT 一样实时打字，拒绝等待 loading。
     *   **打字机动效**: 视觉平滑，不仅是快，更是享受。
     *   **解释模式**: 点击 "释" 按钮，让 AI 充当计算机专家为你深度解析术语。
 *   **🛡️ 隐私安全**：
-    *   **本地存储**: API Key 存储在浏览器本地（Tampermonkey 安全存储），不通过任何第三方中转服务器。
+    *   **本地存储**: `API Key` 存储在浏览器本地（Tampermonkey 安全存储），不通过任何第三方中转服务器。
     *   **UI 脱敏**: 设置菜单中 Key 自动脱敏显示（如 `sk-******`），防止窥屏。
     *   **iframe 隔离**: 脚本仅在主窗口运行，防止第三方广告框架窃取数据。
 *   **⚙️ 便捷配置**：
@@ -66,7 +67,7 @@
     *   功能：使用 AI 对选中的文本进行**深度解释**，而非简单翻译
     *   特点：AI 会以计算机专家身份，详细解释术语、概念、技术细节等
     *   适用场景：理解复杂的技术术语、概念、代码片段等
-    *   ⚠️ **注意**：解释模式仅支持 AI 服务（DeepSeek/OpenAI/Gemini），免费服务（Google/Bing）不支持此功能
+    *   ⚠️ **注意**：解释模式仅支持 AI 服务（DeepSeek/OpenAI/ChatAnywhere/Gemini），免费服务（Google/Bing）不支持此功能
 
 *   **修改目标语言**：
     *   当前默认目标语言为**简体中文**
@@ -80,6 +81,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **DeepSeek** | AI | ✅ | **推荐**，速度快，流式丝滑 | [📖 官方文档](https://api-docs.deepseek.com/) |
 | **OpenAI** | AI | ✅ | 标准兼容协议 | [📖 官方文档](https://platform.openai.com/docs/introduction) |
+| **ChatAnywhere** | AI | ✅ | 标准兼容协议 | [📖 官方文档](https://chatanywhere.apifox.cn) |
 | **Gemini** | AI | ✅ | Google 官方流式接口 | [📖 官方文档](https://ai.google.dev/api) |
 | **Google** | Free | ❌ | 传统的谷歌翻译接口 | [📖 官方文档](https://cloud.google.com/translate/docs/reference/api-overview) |
 | **Bing** | Free | ❌ | 微软翻译接口 | [📖 官方文档](https://learn.microsoft.com/en-us/azure/ai-services/translator/) |
