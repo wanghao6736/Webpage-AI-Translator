@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页划词翻译 (Webpage AI Translator)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.5
+// @version      1.1.6
 // @description  支持流式输出、解释模式、配置分离的划词翻译脚本。UI 多级坐标回退(兼容GitHub)，精准锚点定位，链式布局。
 // @author       Wang Hao
 // @match        *://*/*
@@ -10,12 +10,12 @@
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @noframes
-// @connect      translate.googleapis.com
-// @connect      api.openai.com
 // @connect      api.deepseek.com
-// @connect      api.chatanywhere.tech
+// @connect      api.openai.com
 // @connect      generativelanguage.googleapis.com
-// @connect      api-free.deepl.com
+// @connect      xsksqgrknjqi.us-west-1.clawcloudrun.com
+// @connect      api.chatanywhere.tech
+// @connect      translate.googleapis.com
 // @connect      api-edge.cognitive.microsofttranslator.com
 // @homepage     https://github.com/wanghao6736/Webpage-AI-Translator
 // @updateURL    https://raw.githubusercontent.com/wanghao6736/Webpage-AI-Translator/main/src/web-ai-translator.user.js
@@ -33,9 +33,32 @@
 
 		prompts: {
 			translate:
-				"You are a professional translator. Translate the following text into Simplified Chinese directly without explanation:\n\n{text}",
+            `You are a professional translator specialized in technical and academic texts.Translate the following text into Simplified Chinese directly without explanation.
+            Translation requirements:
+            - Preserve the original meaning, logic, and structure as accurately as possible.
+            - Maintain professional terminology and technical accuracy.
+            - Do NOT add explanations, interpretations, or additional information.
+            - Keep the tone precise, formal, and rigorous.
+            - For specialized terms, use commonly accepted Chinese translations.
+            - If a term has no widely accepted Chinese equivalent, keep the original English term.
+            - Ensure semantic coherence and readability in Chinese.
+            Output requirements:
+            - Output in Chinese only.
+            - Do not include the original text.
+            \n\n{text}`,
 			explain:
-				"You are a computer science expert. Explain the following text in Simplified Chinese clearly. Use Markdown format (bold key points, code blocks for code).\n\n{text}",
+            `You are an encyclopedia-style knowledge expert. Explain the meaning of the selected text in Simplified Chinese clearly.
+            Explanation requirements:
+            - Clearly explain the core ideas, concepts, and logic of the text.
+            - Focus on helping the reader understand what the text means and why it matters.
+            - Define key terms and concepts when necessary.
+            - Keep the explanation accurate, neutral, and informative.
+            - Do not introduce speculative or unsupported interpretations.
+            - If the text is technical, explain it in a clear and structured way without oversimplifying.
+            Output requirements:
+            - Output in Chinese only.
+            - Do not repeat the original text verbatim.
+            \n\n{text}`,
 		},
 
 		ui: {
@@ -62,19 +85,26 @@
 				model: "gpt-3.5-turbo",
 				deltaPath: "choices.0.delta.content",
 			},
-			chatanywhere: {
-				type: "ai",
-				provider: "openai_compatible",
-				baseUrl: "https://api.chatanywhere.tech/v1",
-				model: "gemini-2.5-flash-lite",
-				deltaPath: "choices.0.delta.content",
-			},
 			gemini: {
 				type: "ai",
 				provider: "gemini",
 				baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
 				model: "gemini-2.5-flash-lite",
 				deltaPath: "candidates.0.content.parts.0.text",
+			},
+			ais2api: {
+				type: "ai",
+				provider: "gemini",
+				baseUrl: "https://xsksqgrknjqi.us-west-1.clawcloudrun.com/v1beta/models",
+				model: "gemini-2.5-flash-lite",
+				deltaPath: "candidates.0.content.parts.0.text",
+			},
+			chatanywhere: {
+				type: "ai",
+				provider: "openai_compatible",
+				baseUrl: "https://api.chatanywhere.tech/v1",
+				model: "gemini-2.5-flash-lite",
+				deltaPath: "choices.0.delta.content",
 			},
 			// --- 免费服务 ---
 			google: {
